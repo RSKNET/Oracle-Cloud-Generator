@@ -1,0 +1,42 @@
+name: OCI Bot Periodic Report
+
+on:
+  workflow_dispatch: # Memungkinkan tombol "Run workflow" manual untuk tes kapan saja
+  schedule:
+    - cron: '0 5,17 * * *' # 05:00 UTC = 12:00 WIB Siang | 17:00 UTC = 00:00 WIB Tengah Malam
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+    name: Send Status Report to Telegram
+    steps:
+      - name: Fetch Stats and Send Telegram Notification
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_API_KEY }}
+          TG_CHAT_ID: ${{ secrets.TELEGRAM_USER_ID }}
+          REPO_NAME: ${{ github.repository }}
+        run: |
+          # Dapatkan jumlah berapa kali bot.yml sudah dijalankan dari GitHub API
+          TOTAL_ATTEMPTS=$(curl -s "https://api.github.com/repos/${REPO_NAME}/actions/workflows/bot.yml/runs?per_page=1" | grep -o '"total_count": [0-9]*' | head -n 1 | awk '{print $2}')
+          if [ -z "$TOTAL_ATTEMPTS" ]; then
+            TOTAL_ATTEMPTS="-"
+          fi
+
+          # Format waktu Indonesia Barat (WIB)
+          TIME_WIB=$(TZ="Asia/Jakarta" date "+%d %b %Y, %H:%M WIB")
+
+          # Susun pesan laporan berkala
+          MESSAGE="📊 <b>Laporan Status OCI Bot RSKNET</b>
+
+🕒 <b>Waktu:</b> ${TIME_WIB}
+🔄 <b>Total Percobaan:</b> ${TOTAL_ATTEMPTS} kali perburuan
+📡 <b>Status:</b> Masih mencari slot (Out of host capacity)
+⚡ <b>Jadwal:</b> Otomatis berburu tiap 5 menit
+
+<i>Bot tetap aktif beroperasi di background...</i>"
+
+          # Kirim ke Telegram via Bot API
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT_ID}" \
+            -d "parse_mode=HTML" \
+            --data-urlencode "text=${MESSAGE}"
