@@ -25,15 +25,8 @@ jobs:
           # Format waktu Indonesia Barat (WIB)
           TIME_WIB=$(TZ="Asia/Jakarta" date "+%d %b %Y, %H:%M WIB")
 
-          # Susun pesan laporan berkala
-          MESSAGE="📊 <b>Laporan Status OCI Bot RSKNET</b>
-
-🕒 <b>Waktu:</b> ${TIME_WIB}
-🔄 <b>Total Percobaan:</b> ${TOTAL_ATTEMPTS} kali perburuan
-📡 <b>Status:</b> Masih mencari slot (Out of host capacity)
-⚡ <b>Jadwal:</b> Otomatis berburu tiap 5 menit
-
-<i>Bot tetap aktif beroperasi di background...</i>"
+          # Susun pesan laporan berkala dengan printf agar indentasi YAML aman
+          MESSAGE=$(printf '📊 <b>Laporan Status OCI Bot RSKNET</b>\n\n🕒 <b>Waktu:</b> %s\n🔄 <b>Total Percobaan:</b> %s kali perburuan\n📡 <b>Status:</b> Masih mencari slot (Out of host capacity)\n⚡ <b>Jadwal:</b> Otomatis berburu tiap 5 menit\n\n<i>Bot tetap aktif beroperasi di background...</i>' "$TIME_WIB" "$TOTAL_ATTEMPTS")
 
           # Kirim ke Telegram via Bot API
           curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
