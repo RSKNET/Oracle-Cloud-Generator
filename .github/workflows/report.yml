@@ -1,9 +1,9 @@
 name: OCI Bot Periodic Report
 
 on:
-  workflow_dispatch: # Memungkinkan tombol "Run workflow" manual untuk tes kapan saja
+  workflow_dispatch:
   schedule:
-    - cron: '0 5,17 * * *' # 05:00 UTC = 12:00 WIB Siang | 17:00 UTC = 00:00 WIB Tengah Malam
+    - cron: '0 5,17 * * *' # 12:00 WIB Siang & 00:00 WIB Tengah Malam
 
 jobs:
   send-report:
@@ -12,23 +12,39 @@ jobs:
     steps:
       - name: Fetch Stats and Send Telegram Notification
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_API_KEY }}
           TG_CHAT_ID: ${{ secrets.TELEGRAM_USER_ID }}
           REPO_NAME: ${{ github.repository }}
+          REPORT_WORKFLOW: "report.yml"
         run: |
-          # Dapatkan jumlah berapa kali bot.yml sudah dijalankan dari GitHub API
-          TOTAL_ATTEMPTS=$(curl -s "https://api.github.com/repos/${REPO_NAME}/actions/workflows/bot.yml/runs?per_page=1" | grep -o '"total_count": [0-9]*' | head -n 1 | awk '{print $2}')
-          if [ -z "$TOTAL_ATTEMPTS" ]; then
-            TOTAL_ATTEMPTS="-"
+          # 1. Total seluruh percobaan
+          TOTAL_ATTEMPTS=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://api.github.com/repos/${REPO_NAME}/actions/workflows/bot.yml/runs?per_page=1" \
+            | jq -r '.total_count // 0')
+
+          # 2. Ambil waktu created_at dari report sebelumnya yang sukses
+          PREV_REPORT_TIME=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://api.github.com/repos/${REPO_NAME}/actions/workflows/${REPORT_WORKFLOW}/runs?status=success&per_page=2" \
+            | jq -r '.workflow_runs[1].created_at // empty')
+
+          # 3. Hitung percobaan sejak report terakhir
+          if [ -n "$PREV_REPORT_TIME" ]; then
+            INTERVAL_ATTEMPTS=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
+              "https://api.github.com/repos/${REPO_NAME}/actions/workflows/bot.yml/runs?created=%3E${PREV_REPORT_TIME}&per_page=1" \
+              | jq -r '.total_count // 0')
+          else
+            INTERVAL_ATTEMPTS="$TOTAL_ATTEMPTS"
           fi
 
-          # Format waktu Indonesia Barat (WIB)
+          # Waktu lokal WIB
           TIME_WIB=$(TZ="Asia/Jakarta" date "+%d %b %Y, %H:%M WIB")
 
-          # Susun pesan laporan berkala dengan printf agar indentasi YAML aman
-          MESSAGE=$(printf '📊 <b>Laporan Status OCI Bot RSKNET</b>\n\n🕒 <b>Waktu:</b> %s\n🔄 <b>Total Percobaan:</b> %s kali perburuan\n📡 <b>Status:</b> Masih mencari slot (Out of host capacity)\n⚡ <b>Jadwal:</b> Otomatis berburu tiap 5 menit\n\n<i>Bot tetap aktif beroperasi di background...</i>' "$TIME_WIB" "$TOTAL_ATTEMPTS")
+          # Format pesan bersih & minim ikon
+          MESSAGE=$(printf '<b>Laporan Status OCI Bot RSKNET</b>\n\nWaktu: %s\nTotal Percobaan: %s kali\nPercobaan Periode Ini: %s kali\nStatus: Masih mencari slot (Out of host capacity)\nJadwal: Otomatis berburu tiap 5 menit\n\n<i>Bot tetap aktif beroperasi di background...</i>' \
+            "$TIME_WIB" "$TOTAL_ATTEMPTS" "$INTERVAL_ATTEMPTS")
 
-          # Kirim ke Telegram via Bot API
+          # Kirim ke Telegram
           curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${TG_CHAT_ID}" \
             -d "parse_mode=HTML" \
